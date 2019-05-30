@@ -3,18 +3,23 @@
 use nom::{
     bytes::complete::take,
     multi::count,
-    number::complete::{le_f32, le_u32},
+    number::complete::{be_f32, be_u32, le_f32, le_u32},
     Err, IResult,
 };
 
 fn main() {
-    let bytes: &[u8] = include_bytes!("../A4C8AF9B46ECDA34DBB7D79962256214.replay");
+    let bytes: &[u8] = include_bytes!("../sample_replay.replay");
 
+    if let Err(e) = parse(bytes) {
+        eprintln!("Error: {}", e.description());
+    }
+}
+
+fn parse(bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let (i, checksum) = (&bytes[20..], &bytes[..20]);
     let (i, _header_start) = (&i[24..], &i[..24]);
-    let (i, header) = NamedProperty::from_bytes(i).unwrap();
-
-    // Ok(())
+    let (i, header) = NamedProperty::from_bytes(i).map_err(|_| "Couldn't parse named property.")?;
+    Ok(())
 }
 
 fn load_checksum(i: &[u8]) -> IResult<&[u8], &[u8]> {
@@ -39,10 +44,10 @@ struct NamedProperty<'a> {
 
 impl<'b, 'a: 'b> NamedProperty<'b> {
     fn from_bytes(i: &'a [u8]) -> IResult<&[u8], NamedProperty<'b>> {
+
         let (i, len) = le_u32(i)?;
         let (i, name) = read_str(i, len as usize)?;
 
-        eprintln!("{:?}", name);
 
         if name == "None" {
             return Ok((
