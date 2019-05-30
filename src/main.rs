@@ -3,28 +3,63 @@
 use nom::{
     bytes::complete::take,
     multi::count,
-    number::complete::{be_f32, be_u32, le_f32, le_u32},
+    number::complete::{le_u64, le_i32, le_f32, le_u32},
+    multi::many0,
     Err, IResult,
 };
+
+use std::borrow::Cow;
 
 fn main() {
     let bytes: &[u8] = include_bytes!("../sample_replay.replay");
 
     if let Err(e) = parse(bytes) {
-        eprintln!("Error: {}", e.description());
+        // eprintln!("Error: {:?}", e);
     }
 }
 
-fn parse(bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    let (i, checksum) = (&bytes[20..], &bytes[..20]);
-    let (i, _header_start) = (&i[24..], &i[..24]);
-    let (i, header) = NamedProperty::from_bytes(i).map_err(|_| "Couldn't parse named property.")?;
-    Ok(())
+fn parse(i: &[u8]) -> IResult<&[u8], ()> {
+    let (i, header_len) = le_i32(i)?;
+    let (i, header_crc) = le_i32(i)?;
+    let (i, header_data) = take(header_len as usize)(i)?;
+    let (i, header) = parse_header(header_data)?;
+    dbg!(header);
+    Ok((i, ()))
 }
 
-fn load_checksum(i: &[u8]) -> IResult<&[u8], &[u8]> {
-    take(20u8)(i)
+fn parse_header(i: &[u8]) -> IResult<&[u8], Header> {
+    let (i, major) = le_i32(i)?;
+    let (i, minor) = le_i32(i)?;
+    let (i, net) = if major > 865 && minor > 17 {
+        let (i, netver) = le_i32(i)?;
+        (i, Some(netver))
+    } else {
+        (i, None)
+    };
+    dbg!();
+    let (i, game_type) = read_str(i)?;
+
+    println!("{:?}, {:?}, {:?}, {:?}, {:?}", major, minor, net, game_type, "");
+    let (i, properties) = many0(NamedProperty::from_bytes)(i)?;
+
+    Ok((i, Header {
+        major,
+        minor,
+        net,
+        game_type: Cow::Borrowed(game_type),
+        properties,
+    }))
 }
+
+#[derive(Debug)]
+struct Header<'a> {
+    major: i32,
+    minor: i32,
+    net: Option<i32>,
+    game_type: Cow<'a, str>,
+    properties: Vec<NamedProperty<'a>>
+}
+
 
 #[derive(Debug)]
 enum Property<'a> {
@@ -33,6 +68,8 @@ enum Property<'a> {
     Float(f32),
     Name(&'a str),
     Array(Vec<NamedProperty<'a>>),
+    Byte(&'a [u8]),
+    QWord(&'a [u8]),
     Empty,
 }
 
@@ -44,12 +81,17 @@ struct NamedProperty<'a> {
 
 impl<'b, 'a: 'b> NamedProperty<'b> {
     fn from_bytes(i: &'a [u8]) -> IResult<&[u8], NamedProperty<'b>> {
+        dbg!();
+        let (i, name) = read_str(i)?;
 
-        let (i, len) = le_u32(i)?;
-        let (i, name) = read_str(i, len as usize)?;
+        println!("{:?}", name);
+        dbg!();
+        let (i, prop_type) = read_str(i)?;
+
+        println!("{:?}", prop_type);
 
 
-        if name == "None" {
+        if prop_type == "None" {
             return Ok((
                 i,
                 NamedProperty {
@@ -59,10 +101,8 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
             ));
         }
 
-        let (i, type_len) = le_u32(i)?;
-        let (i, name) = read_str(i, type_len as usize)?;
 
-        match name {
+        match prop_type {
             "IntProperty" => {
                 let (i, val) = le_u32(i)?;
                 Ok((
@@ -74,8 +114,9 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
                 ))
             }
             "StrProperty" => {
-                let (i, len) = le_u32(i)?;
-                let (i, val) = read_str(i, len as usize)?;
+                dbg!();
+                let (i, val) = read_str(i)?;
+
                 Ok((
                     i,
                     NamedProperty {
@@ -95,8 +136,9 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
                 ))
             }
             "NameProperty" => {
-                let (i, len) = le_u32(i)?;
-                let (i, val) = read_str(i, len as usize)?;
+                dbg!();
+                let (i, val) = read_str(i)?;
+
                 Ok((
                     i,
                     NamedProperty {
@@ -116,6 +158,31 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
                     },
                 ))
             }
+            "ByteProperty" => {
+                let (i, _) = take(8u8)(i)?;
+                let (i, len) = le_u32(i)?;
+                let (i, data) = take(len as usize)(i)?;
+
+                Ok((
+                    i,
+                    NamedProperty {
+                        prop: Property::Byte(data),
+                        name
+                    }
+                ))
+            }
+            "QWordProperty" => {
+                let (i, len) = le_u64(&i[8..])?;
+                let (i, data) = take(len as usize)(i)?;
+
+                Ok((
+                    i,
+                    NamedProperty {
+                        prop: Property::QWord(data),
+                        name
+                    }
+                ))
+            }
             _ => Ok((
                 i,
                 NamedProperty {
@@ -127,7 +194,10 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
     }
 }
 
-fn read_str(i: &[u8], len: usize) -> IResult<&[u8], &str> {
-    let (i, word) = take(len)(i)?;
-    Ok((i, std::str::from_utf8(word).unwrap()))
+fn read_str(i: &[u8]) -> IResult<&[u8], &str> {
+    let (i, len) = le_u32(i)?;
+    println!("Len: {}", len);
+    println!("Reading: {:x?}", &i[..len as usize]);
+    let (i, word) = take(len)(i)?; // Don't include the null terminator
+    Ok((&i[1..], std::ffi::CStr::from_bytes_with_nul(word).unwrap().to_str().unwrap()))
 }
