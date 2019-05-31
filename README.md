@@ -1,0 +1,1 @@
+A basic parser for rocket league replay files I'm developing for fun. This is not considered ready.
