@@ -47,7 +47,6 @@ fn parse_header(i: &[u8]) -> IResult<&[u8], Header> {
     );
 
     let (i, properties) = many0(NamedProperty::from_bytes)(i)?;
-
     Ok((
         i,
         Header {
@@ -99,7 +98,7 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
         println!("Type: {:?}", prop_type);
 
         if name == "None" {
-            return Err(Err::Error((i, ErrorKind::Complete))); // We're done parsing this section of props
+            return Err(Err::Error((i, ErrorKind::Count))); // We're done parsing this section of props
         }
 
         let i = &i[8..]; //Throw these bytes away
@@ -182,13 +181,7 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
                     },
                 ))
             }
-            _ => Ok((
-                i,
-                NamedProperty {
-                    prop: Property::Empty,
-                    name,
-                },
-            )),
+            _ => Err(Err::Error((i, ErrorKind::Complete))),
         }
     }
 }
