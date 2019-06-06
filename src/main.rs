@@ -93,16 +93,16 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
     fn from_bytes(i: &'dat [u8]) -> IResult<&[u8], NamedProperty<'prop>> {
         println!("Starting Process: {:x?}", &i[..50]);
         let (i, name) = read_str(i)?;
-        let (i, prop_type) = read_str(i)?;
 
-        print!("Name: {:?}, ", name);
-        print!("Type: {:?}, ", prop_type);
+        // print!("Name: {:?}, ", name);
 
         if name == "None" {
             println!("\nFound None");
             return Ok((i, NamedProperty{ prop: Property::None, name })); // We're done parsing this section of props
         }
 
+        let (i, prop_type) = read_str(i)?;
+        // print!("Type: {:?}, ", prop_type);
         let i = &i[8..]; //Throw these bytes away
 
 
