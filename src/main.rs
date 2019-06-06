@@ -6,7 +6,6 @@ use nom::{
     multi::{count, many0},
     number::complete::{le_f32, le_i32, le_u32, le_u64},
     IResult,
-
 };
 
 use std::borrow::Cow;
@@ -23,8 +22,11 @@ fn parse(i: &[u8]) -> IResult<&[u8], ()> {
     let (i, header_len) = le_i32(i)?;
     let (i, _crc) = le_i32(i)?;
     let (i, header_data) = take(header_len as usize)(i)?;
-    let (i, header) = parse_header(header_data)?;
+    let (_, header) = parse_header(header_data)?;
+    // let (i, properties) = many0(NamedProperty::from_bytes)(i)?;
+
     let header = dbg!(header);
+    println!("Rest of Data: {:x?}", &i[..20]);
 
 
     Ok((i, ()))
@@ -77,7 +79,7 @@ enum Property<'a> {
     Array(Vec<NamedProperty<'a>>),
     Byte(&'a [u8]),
     QWord(&'a [u8]),
-    Empty,
+    None,
 }
 
 #[derive(Debug)]
@@ -87,25 +89,27 @@ struct NamedProperty<'a> {
 }
 
 use nom::Err;
-impl<'b, 'a: 'b> NamedProperty<'b> {
-    fn from_bytes(i: &'a [u8]) -> IResult<&[u8], NamedProperty<'b>> {
+impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
+    fn from_bytes(i: &'dat [u8]) -> IResult<&[u8], NamedProperty<'prop>> {
         println!("Starting Process: {:x?}", &i[..50]);
         let (i, name) = read_str(i)?;
-
-        println!("Name: {:?}", name);
         let (i, prop_type) = read_str(i)?;
 
-        println!("Type: {:?}", prop_type);
+        print!("Name: {:?}, ", name);
+        print!("Type: {:?}, ", prop_type);
 
         if name == "None" {
-            return Err(Err::Error((i, ErrorKind::Count))); // We're done parsing this section of props
+            println!("\nFound None");
+            return Ok((i, NamedProperty{ prop: Property::None, name })); // We're done parsing this section of props
         }
 
         let i = &i[8..]; //Throw these bytes away
 
+
         match prop_type {
             "IntProperty" => {
                 let (i, val) = le_u32(i)?;
+                println!("{}", val);
                 Ok((
                     i,
                     NamedProperty {
@@ -116,7 +120,7 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
             }
             "StrProperty" => {
                 let (i, val) = read_str(i)?;
-                println!("StrProp: {}", val);
+                println!("{}", val);
                 Ok((
                     i,
                     NamedProperty {
@@ -126,18 +130,19 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
                 ))
             }
             "FloatProperty" => {
-                let (i, len) = le_f32(i)?;
+                let (i, val) = le_f32(i)?;
+                println!("{}", val);
                 Ok((
                     i,
                     NamedProperty {
-                        prop: Property::Float(len),
+                        prop: Property::Float(val),
                         name,
                     },
                 ))
             }
             "NameProperty" => {
                 let (i, val) = read_str(i)?;
-
+                println!("{}", val);
                 Ok((
                     i,
                     NamedProperty {
@@ -149,6 +154,7 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
             "ArrayProperty" => {
                 let (i, len) = le_u32(i)?;
                 let (i, props) = count(NamedProperty::from_bytes, len as usize)(i)?;
+                println!("{:x?}", props);
                 Ok((
                     i,
                     NamedProperty {
@@ -160,7 +166,7 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
             "ByteProperty" => {
                 let (i, len) = le_u32(i)?;
                 let (i, data) = take(len as usize)(i)?;
-
+                println!("{:x?}", data);
                 Ok((
                     i,
                     NamedProperty {
@@ -172,7 +178,7 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
             "QWordProperty" => {
                 let (i, len) = le_u64(i)?;
                 let (i, data) = take(len as usize)(i)?;
-
+                println!("{:x?}", data);
                 Ok((
                     i,
                     NamedProperty {
@@ -181,14 +187,14 @@ impl<'b, 'a: 'b> NamedProperty<'b> {
                     },
                 ))
             }
-            _ => Err(Err::Error((i, ErrorKind::Complete))),
+            _ => Err(Err::Error((i, ErrorKind::AlphaNumeric))),
         }
     }
 }
 
 fn read_str(i: &[u8]) -> IResult<&[u8], &str> {
     let (i, len) = le_u32(i)?;
-    println!("Read: {:x?}", &i[..len as usize]);
+    // println!("Read: {:x?}", &i[..len as usize]);
     let (i, word) = take(len)(i)?;
     Ok((
         i,
