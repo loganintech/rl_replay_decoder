@@ -8,29 +8,81 @@ use nom::{
     IResult,
 };
 
+
+use std::env::args;
+use std::fs::File;
+use std::io::Read;
+
 use std::borrow::Cow;
 
 fn main() {
-    let bytes: &[u8] = include_bytes!("../sample_replay.replay");
+    let mut file = File::open(args().nth(1).expect("You must include a replay to parse."))
+        .expect("Couldn't open file for reading.");
+    let mut bytes: Vec<u8> = Vec::new();
+    file.read_to_end(&mut bytes)
+        .expect("Couldn't read bytes of file.");
 
-    if let Err(e) = parse(bytes) {
+    let (rest, replay) = parse(&bytes).unwrap_or_else(|e| {
         eprintln!("Error: {:?}", e);
+        std::process::exit(1);
+    });
+
+    let replay: Replay = dbg!(replay);
+    for prop in replay.header.properties {
+        if prop.name == "Goals" {
+            match prop.prop {
+                Property::Array(goals) => {
+                    for goal in goals.windows(4).step_by(4) {
+                        println!(
+                            "[{}] Goal! {} - {}",
+                            if let Property::Int(val) = goal[0].prop {
+                                val
+                            } else {
+                                eprintln!("{:?}", goal[0].prop);
+                                unreachable!()
+                            },
+                            if let Property::Str(val) = goal[1].prop {
+                                val
+                            } else {
+                                eprintln!("{:?}", goal[1].prop);
+                                unreachable!()
+                            },
+                            if let Property::Int(val) = goal[2].prop {
+                                val
+                            } else {
+                                eprintln!("{:?}", goal[2].prop);
+                                unreachable!()
+                            },
+                        );
+
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
     }
+
 }
 
-fn parse(i: &[u8]) -> IResult<&[u8], ()> {
+fn parse(i: &[u8]) -> IResult<&[u8], Replay> {
     let (i, header_len) = le_i32(i)?;
     let (i, _crc) = le_i32(i)?;
     let (i, header_data) = take(header_len as usize)(i)?;
     let (_, header) = parse_header(header_data)?;
     // let (i, properties) = many0(NamedProperty::from_bytes)(i)?;
 
-    let header = dbg!(header);
-    println!("Rest of Data: {:x?}", &i[..20]);
+    // let header = dbg!(header);
+    // println!("Rest of Data: {:x?}", &i[..20]);
 
-
-    Ok((i, ()))
+    Ok((
+        i,
+        Replay {
+            header,
+            body: Body {},
+        },
+    ))
 }
+
 
 fn parse_header(i: &[u8]) -> IResult<&[u8], Header> {
     let (i, major) = le_i32(i)?;
@@ -43,10 +95,10 @@ fn parse_header(i: &[u8]) -> IResult<&[u8], Header> {
     };
     let (i, game_type) = read_str(i)?;
 
-    println!(
-        "{:?}, {:?}, {:?}, {:?}, {:?}",
-        major, minor, net, game_type, ""
-    );
+    // println!(
+    //     "{:?}, {:?}, {:?}, {:?}, {:?}",
+    //     major, minor, net, game_type, ""
+    // );
 
     let (i, properties) = many0(NamedProperty::from_bytes)(i)?;
     Ok((
@@ -71,6 +123,16 @@ struct Header<'a> {
 }
 
 #[derive(Debug)]
+struct Body {}
+
+#[derive(Debug)]
+struct Replay<'a> {
+    header: Header<'a>,
+    body: Body,
+}
+
+
+#[derive(Debug)]
 enum Property<'a> {
     Int(u32), // Little Endian
     Str(&'a str),
@@ -84,8 +146,8 @@ enum Property<'a> {
 
 #[derive(Debug)]
 struct NamedProperty<'a> {
-    prop: Property<'a>,
     name: &'a str,
+    prop: Property<'a>,
 }
 
 use nom::Err;
@@ -97,8 +159,14 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
         // print!("Name: {:?}, ", name);
 
         if name == "None" {
-            println!("\nFound None");
-            return Ok((i, NamedProperty{ prop: Property::None, name })); // We're done parsing this section of props
+            // println!("\nFound None");
+            return Ok((
+                i,
+                NamedProperty {
+                    prop: Property::None,
+                    name,
+                },
+            )); // We're done parsing this section of props
         }
 
         let (i, prop_type) = read_str(i)?;
@@ -109,7 +177,7 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
         match prop_type {
             "IntProperty" => {
                 let (i, val) = le_u32(i)?;
-                println!("{}", val);
+                // println!("{}", val);
                 Ok((
                     i,
                     NamedProperty {
@@ -120,7 +188,7 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
             }
             "StrProperty" => {
                 let (i, val) = read_str(i)?;
-                println!("{}", val);
+                // println!("{}", val);
                 Ok((
                     i,
                     NamedProperty {
@@ -131,7 +199,7 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
             }
             "FloatProperty" => {
                 let (i, val) = le_f32(i)?;
-                println!("{}", val);
+                // println!("{}", val);
                 Ok((
                     i,
                     NamedProperty {
@@ -142,7 +210,7 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
             }
             "NameProperty" => {
                 let (i, val) = read_str(i)?;
-                println!("{}", val);
+                // println!("{}", val);
                 Ok((
                     i,
                     NamedProperty {
@@ -152,9 +220,10 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
                 ))
             }
             "ArrayProperty" => {
-                let (i, len) = le_u32(i)?;
+                let (i, mut len) = le_u32(i)?;
+                len *= 4;
                 let (i, props) = count(NamedProperty::from_bytes, len as usize)(i)?;
-                println!("{:x?}", props);
+                // println!("{:x?}", props);
                 Ok((
                     i,
                     NamedProperty {
@@ -166,7 +235,7 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
             "ByteProperty" => {
                 let (i, len) = le_u32(i)?;
                 let (i, data) = take(len as usize)(i)?;
-                println!("{:x?}", data);
+                // println!("{:x?}", data);
                 Ok((
                     i,
                     NamedProperty {
@@ -178,7 +247,7 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
             "QWordProperty" => {
                 let (i, len) = le_u64(i)?;
                 let (i, data) = take(len as usize)(i)?;
-                println!("{:x?}", data);
+                // println!("{:x?}", data);
                 Ok((
                     i,
                     NamedProperty {
