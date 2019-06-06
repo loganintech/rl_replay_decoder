@@ -91,7 +91,7 @@ struct NamedProperty<'a> {
 use nom::Err;
 impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
     fn from_bytes(i: &'dat [u8]) -> IResult<&[u8], NamedProperty<'prop>> {
-        println!("Starting Process: {:x?}", &i[..50]);
+        // println!("Starting Process: {:x?}", &i[..50]);
         let (i, name) = read_str(i)?;
 
         // print!("Name: {:?}, ", name);
