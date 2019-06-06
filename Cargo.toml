@@ -8,3 +8,11 @@ edition = "2018"
 
 [dependencies]
 nom = "5.0.0-beta2"
+
+[[bin]]
+name = "rl_replay"
+path = "src/main.rs"
+
+[lib]
+name = "rl_replay_lib"
+path = "src/lib.rs"
