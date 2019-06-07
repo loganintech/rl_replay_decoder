@@ -21,6 +21,7 @@ fn main() {
     let mut team_zero = 0;
     let mut team_one = 0;
     let mut im_on_team_zero = false;
+    let mut im_found = false;
 
     for prop in replay.header.game_properties {
         if prop.name == "Goals" {
@@ -48,6 +49,7 @@ fn main() {
 
                         im_on_team_zero =
                             im_on_team_zero || (player.contains("JewsOfHazard") && team != 1);
+                        im_found = im_found || player.contains("JewsOfHazard");
 
                         if team == 1 {
                             team_one += 1;
