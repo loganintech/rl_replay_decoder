@@ -1,23 +1,3 @@
-# total=0
-# won=0
-# lost=0
-
-# for filename in sample_replays/*;
-# do
-#     ./target/release/rl_replay $filename;
-#     total=$((total+1))
-#     if [ $? -eq 1 ]; then
-#         echo "Won!"
-#         won=$((won+1))
-#     fi
-#     if [ $? -ne 1 ]; then
-#         echo "Lost"
-#         lost=$((lost+1))
-#     fi
-# done
-
-# echo "Won $won"
-
 import os
 import subprocess
 
