@@ -10,18 +10,18 @@ use std::borrow::Cow;
 
 use crate::utils::read_str;
 
-
 #[derive(Debug)]
 pub struct Header<'a> {
     pub major: i32,
     pub minor: i32,
     pub net: Option<i32>,
     pub game_type: Cow<'a, str>,
-    pub properties: Vec<NamedProperty<'a>>,
+    pub game_properties: Vec<NamedProperty<'a>>,
+    pub player_stats: Vec<NamedProperty<'a>>,
 }
 
 impl<'a> Header<'a> {
-    pub fn parse_header(i: &'a [u8]) -> IResult<&'a [u8], Header> {
+    pub fn parse(i: &'a [u8]) -> IResult<&'a [u8], Header> {
         let (i, major) = le_i32(i)?;
         let (i, minor) = le_i32(i)?;
         let (i, net) = if major > 865 && minor > 17 {
@@ -37,7 +37,7 @@ impl<'a> Header<'a> {
         //     major, minor, net, game_type, ""
         // );
 
-        let (i, properties) = many0(NamedProperty::from_bytes)(i)?;
+        let (i, game_properties) = many0(NamedProperty::from_bytes)(i)?;
         Ok((
             i,
             Header {
@@ -45,7 +45,8 @@ impl<'a> Header<'a> {
                 minor,
                 net,
                 game_type: Cow::Borrowed(game_type),
-                properties,
+                game_properties,
+                player_stats: vec![],
             },
         ))
     }
@@ -173,7 +174,10 @@ impl<'prop, 'dat: 'prop> NamedProperty<'prop> {
                     },
                 ))
             }
-            _ => Err(Err::Error((i, ErrorKind::AlphaNumeric))),
+            prop => {
+                // println!("Prop: {:x?}", prop);
+                Err(Err::Error((i, ErrorKind::AlphaNumeric)))
+            }
         }
     }
 }
